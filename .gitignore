@@ -1,0 +1,11 @@
+# Node modules
+node_modules/
+
+# Environnement
+.env
+
+# Logs
+*.log
+
+# Dossiers temporaires
+tmp/
