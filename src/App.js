@@ -1,58 +1,72 @@
 import React, { useState, useEffect } from 'react';
+import CreateIntern from './components/createIntern'; // Importation du composant pour créer un stagiaire
+import UpdateIntern from './components/updateIntern'; // Importation du composant pour mettre à jour un stagiaire
+import DeleteIntern from './components/deleteIntern'; // Importation du composant pour supprimer un stagiaire
 
-function FilterableInternTable({ interns }) {
+function FilterableInternTable({ interns, onUpdate, onDelete }) {
   const [filterText, setFilterText] = useState('');
-  
+
   return (
     <div>
-      <SearchBar 
-        filterText={filterText} 
-        onFilterTextChange={setFilterText}  
-      />
-      <InternTable 
-        interns={interns}
-        filterText={filterText}
-      />
+      <SearchBar filterText={filterText} onFilterTextChange={setFilterText} />
+      <InternTable interns={interns} filterText={filterText} onUpdate={onUpdate} onDelete={onDelete} />
     </div>
   );
 }
 
-function InternRow({ intern }) {
-  const { firstName, lastName, stage } = intern;
+function InternRow({ intern, onUpdate, onDelete }) {
+  const { firstName, lastName, stage, id } = intern;
+
+  const handleDelete = async () => {
+    // Call the delete function passed via props
+    await onDelete(id);
+  };
 
   return (
     <tr>
       <td>{firstName} {lastName}</td>
       <td>{stage ? stage.title : 'Aucun stage'}</td>
       <td>{stage ? stage.description : 'N/A'}</td>
+      <td>
+        <button 
+          className="btn btn-secondary" 
+          onClick={() => onUpdate(intern)}
+        >
+          Modifier
+        </button>
+        <button 
+          className="btn btn-danger" 
+          onClick={handleDelete}
+        >
+          Supprimer
+        </button>
+      </td>
     </tr>
   );
 }
 
-function InternTable({ interns, filterText }) {
+function InternTable({ interns, filterText, onUpdate, onDelete }) {
   const rows = [];
-  
+
   interns.forEach((intern) => {
-    if (intern.firstName.toLowerCase().indexOf(filterText.toLowerCase()) === -1 && 
+    if (intern.firstName.toLowerCase().indexOf(filterText.toLowerCase()) === -1 &&
         intern.lastName.toLowerCase().indexOf(filterText.toLowerCase()) === -1) {
       return;
     }
 
     rows.push(
-      <InternRow
-        intern={intern}
-        key={intern.id}
-      />
+      <InternRow intern={intern} key={intern.id} onUpdate={onUpdate} onDelete={onDelete} />
     );
   });
 
   return (
-    <table>
+    <table className="table table-striped">
       <thead>
         <tr>
           <th>Nom Complet</th>
           <th>Titre du Stage</th>
           <th>Description du Stage</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>{rows}</tbody>
@@ -62,9 +76,10 @@ function InternTable({ interns, filterText }) {
 
 function SearchBar({ filterText, onFilterTextChange }) {
   return (
-    <form>
+    <form className="form-inline">
       <input 
         type="text" 
+        className="form-control"
         value={filterText} 
         placeholder="Rechercher un stagiaire..."
         onChange={(e) => onFilterTextChange(e.target.value)}
@@ -75,177 +90,111 @@ function SearchBar({ filterText, onFilterTextChange }) {
 
 export default function App() {
   const [interns, setInterns] = useState([]);
+  const [selectedIntern, setSelectedIntern] = useState(null); // State to manage the selected intern for update
 
   useEffect(() => {
-    const fetchInterns = async () => {
-      try {
-        const response = await fetch('http://localhost:8080/students');
-        if (!response.ok) {
-          throw new Error('Network response was not ok');
-        }
-        const data = await response.json();
-        setInterns(data);
-      } catch (error) {
-        console.error('Error fetching interns:', error);
-      }
-    };
-
     fetchInterns();
   }, []);
 
-  return <FilterableInternTable interns={interns} />;
-}
+  const fetchInterns = async () => {
+    try {
+      const response = await fetch('http://localhost:8080/students');
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      const data = await response.json();
+      setInterns(data);
+    } catch (error) {
+      console.error('Error fetching interns:', error);
+    }
+  };
 
+  const handleAddIntern = async (values) => {
+    try {
+      const response = await fetch(`http://localhost:8080/students/byTitle?firstName=${encodeURIComponent(values.firstName)}&lastName=${encodeURIComponent(values.lastName)}&title=${encodeURIComponent(values.stageTitle)}&stageDescription=${encodeURIComponent(values.stageDescription)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
+      if (!response.ok) {
+        throw new Error('Erreur lors de l\'ajout du stagiaire');
+      }
 
-// Le code du TP1:
-/* import { useState } from 'react';
+      const newIntern = await response.json();
+      setInterns((prevInterns) => [...prevInterns, newIntern]);
 
-function FilterableStageTable({ stages }) {
-  const [filterText, setFilterText] = useState('');
-  const [inBaseOnly, setInBaseOnly] = useState(false);
+    } catch (error) {
+      console.error('Erreur lors de l\'ajout du stagiaire:', error);
+    }
+  };
+
+  const handleUpdateIntern = async (updatedIntern) => {
+    try {
+      const response = await fetch(`http://localhost:8080/students/update/${updatedIntern.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          firstName: updatedIntern.firstName,
+          lastName: updatedIntern.lastName,
+          stage: { id: updatedIntern.stage.id } // Assurez-vous que l'ID du stage est correct
+        }),
+      });
+  
+      if (!response.ok) {
+        const errorText = await response.text(); // Récupérer le texte de l'erreur
+        throw new Error(`Erreur ${response.status}: ${errorText}`); // Inclure le statut et le message d'erreur
+      }
+  
+      const updatedData = await response.json();
+  
+      // Mettre à jour immédiatement l'état local
+      setInterns((prevInterns) => 
+        prevInterns.map((intern) => (intern.id === updatedData.id ? updatedData : intern))
+      );
+  
+      setSelectedIntern(null); // Réinitialiser le stagiaire sélectionné après la mise à jour
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour du stagiaire:', error.message); // Afficher le message d'erreur détaillé
+    }
+  };
+  
+  
+
+  const handleDeleteIntern = async (id) => {
+    try {
+      const response = await fetch(`http://localhost:8080/students/delete/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Erreur lors de la suppression du stagiaire');
+      }
+
+      setInterns((prevInterns) => prevInterns.filter((intern) => intern.id !== id));
+    } catch (error) {
+      console.error('Erreur lors de la suppression du stagiaire:', error);
+    }
+  };
 
   return (
-    <div>
-      <SearchBar 
-        filterText={filterText} 
-        inBaseOnly={inBaseOnly} 
-        onFilterTextChange={setFilterText}
-        onInBaseOnlyChange={setInBaseOnly}  />
-      <StageTable 
-        stages={stages}
-        filterText={filterText}
-        inBaseOnly={inBaseOnly} />
+    <div className="container">
+      <h1 className="my-4">Liste des Stagiaires</h1>
+      <FilterableInternTable interns={interns} onUpdate={setSelectedIntern} onDelete={handleDeleteIntern} />
+      
+      {selectedIntern && (
+        <>
+          <h2 className="my-4">Modifier le Stagiaire</h2>
+          <UpdateIntern intern={selectedIntern} onUpdate={handleUpdateIntern} />
+        </>
+      )}
+
+      <h2 className="my-4">Ajouter un Stagiaire</h2>
+      <CreateIntern onSubmit={handleAddIntern} />
     </div>
   );
 }
 
-
-function StageCategoryRow({ category }) {
-  return (
-    <tr>
-      <th colSpan="2">
-        {category}
-      </th>
-    </tr>
-  );
-}
-
-//couleur basée sur l'état du stage
-function StageRow({ stage }) {
-  let color;
-  switch (stage.etat) {
-    case 'disponible':
-      color = 'green';
-      break;
-    case 'affecté':
-      color = 'orange';
-      break;
-    case 'terminé':
-      color = 'red';
-      break;
-    default:
-      color = 'black'; 
-  }
-
-  return (
-    <tr>
-      <td style={{ color: color }}>
-        {stage.name}
-      </td>
-      <td>{stage.etat}</td>
-    </tr>
-  );
-}
-
-
-function StageTable({ stages, filterText, inBaseOnly }) {
-  const rows = [];
-  let lastCategory = null;
-
-  stages.forEach((stage) => {
-    if (stage.category.toLowerCase().indexOf(
-      filterText.toLowerCase()
-    ) === -1
-    ) {
-      return;
-    }
-    if (inBaseOnly && stage.etat !== 'disponible') {
-      return;
-    }
-    if (stage.category !==lastCategory){
-      rows.push(
-        <StageCategoryRow
-          category={stage.category}
-          key={stage.category} />
-      );
-    }
-      
-    rows.push(
-      <StageRow
-        stage={stage}
-        key={stage.name} />
-    );
-    lastCategory = stage.category;
-  });
-
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>Intitulé</th>
-          <th>Etat</th>
-        </tr>
-      </thead>
-      <tbody>{rows}</tbody>
-    </table>
-  );
-}
-
-function SearchBar({ filterText, inBaseOnly, onFilterTextChange, onInBaseOnlyChange }) {
-  return (
-    <form>
-      <input 
-        type="text" 
-        value={filterText} 
-        placeholder="Search..."
-        onChange={(e) => onFilterTextChange(e.target.value)}
-        />
-      <label>
-        <input 
-          type="checkbox" 
-          checked={inBaseOnly} 
-          onChange={(e) => onInBaseOnlyChange(e.target.checked)}
-          />
-        {' '}
-        Only show available in base stages
-      </label>
-    </form>
-  );
-}
-
-function Home () {
-
-}
-
-function About () {
-  
-}
-
-function Contact () {
-  
-}
-
-const STAGES = [
-  {category: "Informatique", etat: "disponible", name: "Miage"},
-  {category: "Gestion", etat: "affecté", name: "Contrôle de gestion"},
-  {category: "Ressources humaines", etat: "terminé", name: "Recrutement"},
-  {category: "Informatique", etat: "affecté", name: "Miage"},
-  {category: "Achats", etat: "disponible", name: "Achat MP"},
-  {category: "Informatique", etat: "terminé", name: "Génie logiciel"}
-];
-
-export default function App() {
-  return <FilterableStageTable stages={STAGES} />;
-}
- */
