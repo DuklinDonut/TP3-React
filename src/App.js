@@ -1,135 +1,143 @@
 import React, { useState, useEffect } from 'react';
-import CreateIntern from './components/createIntern'; // Importation du composant pour créer un stagiaire
-import UpdateIntern from './components/updateIntern'; // Importation du composant pour mettre à jour un stagiaire
-import DeleteIntern from './components/deleteIntern'; // Importation du composant pour supprimer un stagiaire
-
-function FilterableInternTable({ interns, onUpdate, onDelete }) {
-  const [filterText, setFilterText] = useState('');
-
-  return (
-    <div>
-      <SearchBar filterText={filterText} onFilterTextChange={setFilterText} />
-      <InternTable interns={interns} filterText={filterText} onUpdate={onUpdate} onDelete={onDelete} />
-    </div>
-  );
-}
-
-function InternRow({ intern, onUpdate, onDelete }) {
-  const { firstName, lastName, stage, id } = intern;
-
-  const handleDelete = async () => {
-    // Call the delete function passed via props
-    await onDelete(id);
-  };
-
-  return (
-    <tr>
-      <td>{firstName} {lastName}</td>
-      <td>{stage ? stage.title : 'Aucun stage'}</td>
-      <td>{stage ? stage.description : 'N/A'}</td>
-      <td>
-        <button 
-          className="btn btn-secondary" 
-          onClick={() => onUpdate(intern)}
-        >
-          Modifier
-        </button>
-        <button 
-          className="btn btn-danger" 
-          onClick={handleDelete}
-        >
-          Supprimer
-        </button>
-      </td>
-    </tr>
-  );
-}
-
-function InternTable({ interns, filterText, onUpdate, onDelete }) {
-  const rows = [];
-
-  interns.forEach((intern) => {
-    if (intern.firstName.toLowerCase().indexOf(filterText.toLowerCase()) === -1 &&
-        intern.lastName.toLowerCase().indexOf(filterText.toLowerCase()) === -1) {
-      return;
-    }
-
-    rows.push(
-      <InternRow intern={intern} key={intern.id} onUpdate={onUpdate} onDelete={onDelete} />
-    );
-  });
-
-  return (
-    <table className="table table-striped">
-      <thead>
-        <tr>
-          <th>Nom Complet</th>
-          <th>Titre du Stage</th>
-          <th>Description du Stage</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>{rows}</tbody>
-    </table>
-  );
-}
-
-function SearchBar({ filterText, onFilterTextChange }) {
-  return (
-    <form className="form-inline">
-      <input 
-        type="text" 
-        className="form-control"
-        value={filterText} 
-        placeholder="Rechercher un stagiaire..."
-        onChange={(e) => onFilterTextChange(e.target.value)}
-      />
-    </form>
-  );
-}
+import CreateIntern from './components/createIntern';
+import UpdateIntern from './components/updateIntern';
+import Login from './components/login';
 
 export default function App() {
   const [interns, setInterns] = useState([]);
-  const [selectedIntern, setSelectedIntern] = useState(null); // State to manage the selected intern for update
+  const [selectedIntern, setSelectedIntern] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  // Check login status on initial load
   useEffect(() => {
-    fetchInterns();
+    checkLoginStatus();
   }, []);
+
+  // Fetch interns if authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchInterns();
+    }
+  }, [isAuthenticated]);
 
   const fetchInterns = async () => {
     try {
-      const response = await fetch('http://localhost:8080/students');
-      if (!response.ok) {
-        throw new Error('Network response was not ok');
-      }
-      const data = await response.json();
-      setInterns(data);
-    } catch (error) {
-      console.error('Error fetching interns:', error);
-    }
-  };
+        const response = await fetch('http://localhost:8080/students', {
+            credentials: 'include', // Ensure session cookies are sent
+        });
 
-  const handleAddIntern = async (values) => {
+        // Check if the response is JSON, if not, handle it accordingly
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            throw new Error("Expected JSON response but received HTML or other content. Check login status.");
+        }
+
+        if (!response.ok) throw new Error('Failed to fetch interns');
+        const data = await response.json();
+        setInterns(data);
+    } catch (error) {
+        console.error('Error fetching interns:', error);
+    }
+};
+
+  // Login handler
+  const handleLogin = async (username, password) => {
     try {
-      const response = await fetch(`http://localhost:8080/students/byTitle?firstName=${encodeURIComponent(values.firstName)}&lastName=${encodeURIComponent(values.lastName)}&title=${encodeURIComponent(values.stageTitle)}&stageDescription=${encodeURIComponent(values.stageDescription)}`, {
+      const response = await fetch('http://localhost:8080/login', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
+        body: new URLSearchParams({ username, password }),
+        credentials: 'include',
       });
 
-      if (!response.ok) {
-        throw new Error('Erreur lors de l\'ajout du stagiaire');
+      if (response.ok) {
+        setIsAuthenticated(true);
+        fetchInterns(); // Fetch data immediately after successful login
+      } else {
+        console.error('Login failed');
       }
-
-      const newIntern = await response.json();
-      setInterns((prevInterns) => [...prevInterns, newIntern]);
-
     } catch (error) {
-      console.error('Erreur lors de l\'ajout du stagiaire:', error);
+      console.error('Login error:', error);
     }
   };
 
+  // Check login status to maintain session
+  const checkLoginStatus = async () => {
+    try {
+      const response = await fetch('http://localhost:8080/loginStatus', {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        setIsAuthenticated(true);
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch (error) {
+      console.error('Error checking login status:', error);
+      setIsAuthenticated(false);
+    }
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    try {
+      const response = await fetch("http://localhost:8080/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (response.ok) {
+        setIsAuthenticated(false);
+        setInterns([]);
+        setSelectedIntern(null);
+      } else {
+        console.error("Failed to log out");
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
+  // Handle create intern
+  const handleCreateIntern = async (values) => {
+    try {
+      const queryParams = new URLSearchParams({
+        firstName: values.firstName,
+        lastName: values.lastName,
+        title: values.stageTitle,
+        description: values.stageDescription,
+      });
+
+      const response = await fetch(`http://localhost:8080/students/byTitle?${queryParams}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        credentials: 'include',
+      });
+
+      if (!response.ok) throw new Error('Failed to create intern');
+      const newIntern = await response.json();
+      setInterns((prev) => [...prev, newIntern]);
+    } catch (error) {
+      console.error('Error creating intern:', error);
+    }
+  };
+
+  // Handle delete intern
+  const handleDeleteIntern = async (id) => {
+    try {
+      const response = await fetch(`http://localhost:8080/students/delete/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to delete intern');
+      setInterns((prev) => prev.filter((intern) => intern.id !== id));
+    } catch (error) {
+      console.error('Error deleting intern:', error);
+    }
+  };
+
+  // Handle update intern
   const handleUpdateIntern = async (updatedIntern) => {
     try {
       const response = await fetch(`http://localhost:8080/students/update/${updatedIntern.id}`, {
@@ -137,64 +145,83 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           firstName: updatedIntern.firstName,
           lastName: updatedIntern.lastName,
-          stage: { id: updatedIntern.stage.id } // Assurez-vous que l'ID du stage est correct
+          stage: { id: updatedIntern.stage.id },
         }),
       });
-  
-      if (!response.ok) {
-        const errorText = await response.text(); // Récupérer le texte de l'erreur
-        throw new Error(`Erreur ${response.status}: ${errorText}`); // Inclure le statut et le message d'erreur
-      }
-  
+
+      if (!response.ok) throw new Error('Failed to update intern');
+
       const updatedData = await response.json();
-  
-      // Mettre à jour immédiatement l'état local
-      setInterns((prevInterns) => 
-        prevInterns.map((intern) => (intern.id === updatedData.id ? updatedData : intern))
+      setInterns((prev) =>
+        prev.map((intern) => (intern.id === updatedData.id ? updatedData : intern))
       );
-  
-      setSelectedIntern(null); // Réinitialiser le stagiaire sélectionné après la mise à jour
+      setSelectedIntern(null);
+      console.log('Student updated successfully');
     } catch (error) {
-      console.error('Erreur lors de la mise à jour du stagiaire:', error.message); // Afficher le message d'erreur détaillé
-    }
-  };
-  
-  
-
-  const handleDeleteIntern = async (id) => {
-    try {
-      const response = await fetch(`http://localhost:8080/students/delete/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        throw new Error('Erreur lors de la suppression du stagiaire');
-      }
-
-      setInterns((prevInterns) => prevInterns.filter((intern) => intern.id !== id));
-    } catch (error) {
-      console.error('Erreur lors de la suppression du stagiaire:', error);
+      console.error('Error updating intern:', error);
     }
   };
 
   return (
     <div className="container">
-      <h1 className="my-4">Liste des Stagiaires</h1>
-      <FilterableInternTable interns={interns} onUpdate={setSelectedIntern} onDelete={handleDeleteIntern} />
-      
-      {selectedIntern && (
-        <>
-          <h2 className="my-4">Modifier le Stagiaire</h2>
-          <UpdateIntern intern={selectedIntern} onUpdate={handleUpdateIntern} />
-        </>
-      )}
+      <h1>Intern Management</h1>
 
-      <h2 className="my-4">Ajouter un Stagiaire</h2>
-      <CreateIntern onSubmit={handleAddIntern} />
+      {isAuthenticated ? (
+        <>
+          <button onClick={handleLogout} className="btn btn-secondary">Logout</button>
+          
+          <h2>List of Interns</h2>
+          <table className="table table-striped">
+            <thead>
+              <tr>
+                <th>First Name</th>
+                <th>Last Name</th>
+                <th>Stage Title</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {interns.map((intern) => (
+                <tr key={intern.id}>
+                  <td>{intern.firstName}</td>
+                  <td>{intern.lastName}</td>
+                  <td>{intern.stage ? intern.stage.title : 'No Stage'}</td>
+                  <td>
+                    <button onClick={() => setSelectedIntern(intern)} className="btn btn-secondary">
+                      Update
+                    </button>
+                    <button onClick={() => handleDeleteIntern(intern.id)} className="btn btn-danger">
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <h2>Add New Intern</h2>
+          <CreateIntern onSubmit={handleCreateIntern} />
+
+          {selectedIntern && (
+            <>
+              <h2>Update Intern</h2>
+              <UpdateIntern
+                intern={selectedIntern}
+                onUpdate={(updatedIntern) => {
+                  setInterns((prev) => prev.map((intern) => (intern.id === updatedIntern.id ? updatedIntern : intern)));
+                  setSelectedIntern(null);
+                }}
+              />
+            </>
+          )}
+        </>
+      ) : (
+        <Login onLogin={handleLogin} />
+      )}
     </div>
   );
 }
-

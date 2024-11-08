@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 
 const UpdateIntern = ({ intern, onUpdate }) => {
   const [formValues, setFormValues] = useState({
@@ -6,17 +6,36 @@ const UpdateIntern = ({ intern, onUpdate }) => {
     lastName: '',
     stageId: '',
   });
-  const [errorMessage, setErrorMessage] = useState(''); // État pour gérer les messages d'erreur
+  const [stages, setStages] = useState([]);
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     if (intern) {
       setFormValues({
         firstName: intern.firstName,
         lastName: intern.lastName,
-        stageId: intern.stage ? intern.stage.id : '', // Si le stagiaire a un stage, récupère l'ID
+        stageId: intern.stage ? intern.stage.id : '',
       });
     }
   }, [intern]);
+
+  useEffect(() => {
+    const fetchStages = async () => {
+      try {
+        const response = await fetch('http://localhost:8080/stages', {
+          credentials: 'include',
+        });
+        if (!response.ok) throw new Error('Unable to fetch stages');
+        const data = await response.json();
+        setStages(data);
+      } catch (error) {
+        console.error('Error fetching stages:', error);
+        setErrorMessage('Unable to load stages.');
+      }
+    };
+
+    fetchStages();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -28,42 +47,51 @@ const UpdateIntern = ({ intern, onUpdate }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     const { firstName, lastName, stageId } = formValues;
-
+  
     try {
       const response = await fetch(`http://localhost:8080/students/update/${intern.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           firstName,
           lastName,
           stage: { id: stageId },
         }),
       });
-
-      // Vérifie si la réponse est correcte
+  
       if (!response.ok) {
-        const errorText = await response.text(); // Obtenir le texte brut en cas d'erreur
-        throw new Error(`Erreur lors de la mise à jour du stagiaire: ${errorText}`);
+        const errorText = await response.text();
+        throw new Error(`Error updating intern: ${errorText}`);
       }
-
-      // Vérifie si la réponse est bien un JSON
-      //await response.json(); // Vous pouvez ignorer la réponse ou l'utiliser si nécessaire
-
-      // Recharge la page pour actualiser les données
-      window.location.reload(); // Rechargement de la page
+  
+      // Check if response is JSON
+      const contentType = response.headers.get("content-type");
+      let updatedData;
+  
+      if (contentType && contentType.includes("application/json")) {
+        updatedData = await response.json();
+      } else {
+        // Manually create updated data assuming stage title is available in stages list
+        const stageTitle = stages.find(stage => stage.id === parseInt(stageId))?.title;
+        updatedData = { ...intern, firstName, lastName, stage: { id: stageId, title: stageTitle } };
+      }
+  
+      onUpdate(updatedData); // Call the onUpdate function passed from parent to handle the update
     } catch (error) {
-      console.error('Erreur lors de la mise à jour du stagiaire:', error);
-      setErrorMessage(error.message); // Affiche une alerte avec le message d'erreur
+      console.error('Error updating intern:', error);
+      setErrorMessage(error.message);
     }
   };
+  
+  
 
   return (
     <form onSubmit={handleSubmit}>
-      {errorMessage && <div className="alert alert-danger">{errorMessage}</div>} {/* Affiche le message d'erreur si présent */}
+      {errorMessage && <div className="alert alert-danger">{errorMessage}</div>}
       <div className="form-group">
         <label htmlFor="firstName">Prénom</label>
         <input
@@ -89,16 +117,22 @@ const UpdateIntern = ({ intern, onUpdate }) => {
         />
       </div>
       <div className="form-group">
-        <label htmlFor="stageId">ID du Stage</label>
-        <input
-          type="text"
+        <label htmlFor="stageId">Stage</label>
+        <select
           className="form-control"
           id="stageId"
           name="stageId"
           value={formValues.stageId}
           onChange={handleChange}
           required
-        />
+        >
+          <option value="">Select a stage</option>
+          {stages.map((stage) => (
+            <option key={stage.id} value={stage.id}>
+              {stage.title}
+            </option>
+          ))}
+        </select>
       </div>
       <button type="submit" className="btn btn-primary">Mettre à jour</button>
     </form>
